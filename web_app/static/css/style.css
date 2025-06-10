@@ -1,0 +1,96 @@
+/* NYC Property Investment ML - Custom Styles */
+:root {
+    --primary-color: #0d6efd;
+    --success-color: #198754;
+    --danger-color: #dc3545;
+    --warning-color: #ffc107;
+    --info-color: #0dcaf0;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.hero-section {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.analysis-card {
+    border: none;
+    border-radius: 1rem;
+}
+
+.input-group-lg .form-control,
+.input-group-lg .btn {
+    border-radius: 0.75rem;
+}
+
+.example-btn {
+    transition: all 0.3s ease;
+}
+
+.example-btn:hover {
+    transform: translateY(-2px);
+}
+
+.card {
+    border-radius: 0.75rem;
+    transition: all 0.3s ease;
+}
+
+.card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+}
+
+.progress {
+    border-radius: 1rem;
+}
+
+@media (max-width: 768px) {
+    .hero-section {
+        padding: 2rem 0;
+    }
+    
+    .analysis-card .card-body {
+        padding: 2rem 1rem;
+    }
+}
+
+/* Loading animations */
+.fade-in {
+    animation: fadeIn 0.5s ease-in;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Score circles */
+.score-circle {
+    width: 100px;
+    height: 100px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 1.2rem;
+    margin: 0 auto;
+}
+
+.score-high { 
+    background: linear-gradient(135deg, #28a745, #20c997); 
+    color: white; 
+}
+
+.score-medium { 
+    background: linear-gradient(135deg, #ffc107, #fd7e14); 
+    color: white; 
+}
+
+.score-low { 
+    background: linear-gradient(135deg, #dc3545, #e83e8c); 
+    color: white; 
+}
