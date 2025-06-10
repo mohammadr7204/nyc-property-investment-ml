@@ -58,6 +58,25 @@ def get_analyzer():
             raise
     return analyzer
 
+# Error handlers
+@app.errorhandler(404)
+def not_found_error(error):
+    """Handle 404 errors"""
+    return render_template('404.html'), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    """Handle 500 errors"""
+    logger.error(f"Internal server error: {error}")
+    return render_template('500.html'), 500
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    """Handle unexpected exceptions"""
+    logger.error(f"Unhandled exception: {e}")
+    logger.error(traceback.format_exc())
+    return render_template('500.html'), 500
+
 @app.route('/')
 def index():
     """Main page with property analysis form"""
