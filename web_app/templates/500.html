@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block title %}Server Error - NYC Property Investment ML{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6 text-center">
+            <div class="card">
+                <div class="card-body py-5">
+                    <i class="fas fa-server text-danger" style="font-size: 5rem;"></i>
+                    <h1 class="display-3 mt-3">500</h1>
+                    <h2 class="mb-3">Server Error</h2>
+                    <p class="lead text-muted">
+                        Something went wrong on our end. Please try again later.
+                    </p>
+                    <div class="mt-4">
+                        <a href="{{ url_for('index') }}" class="btn btn-primary btn-lg me-2">
+                            <i class="fas fa-home me-2"></i>Go Home
+                        </a>
+                        <button onclick="window.location.reload()" class="btn btn-outline-secondary btn-lg">
+                            <i class="fas fa-redo me-2"></i>Try Again
+                        </button>
+                    </div>
+                    <div class="mt-4">
+                        <small class="text-muted">
+                            If the problem persists, please check the 
+                            <a href="{{ url_for('health_check') }}" target="_blank">system status</a>.
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
