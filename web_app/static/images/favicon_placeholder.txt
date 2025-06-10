@@ -1,0 +1,14 @@
+🏙️ NYC Property Investment ML - Favicon Placeholder
+
+This is a placeholder for the website favicon. 
+
+To add a proper favicon:
+1. Go to https://favicon.io/ 
+2. Create a favicon with "NYC" text or building icon
+3. Use blue (#0d6efd) background to match the app theme
+4. Download the generated favicon.ico file
+5. Replace this file with favicon.ico
+
+The HTML template is already configured to use favicon.ico from this directory.
+
+For now, the website will use the browser's default icon.
