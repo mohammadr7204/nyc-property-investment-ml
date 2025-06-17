@@ -1,7 +1,7 @@
 """
 Main NYC Property Investment Analyzer
 Integrates data collection pipeline with ML revenue prediction for complete property analysis.
-Enhanced with real data sources and improved accuracy.
+Enhanced with real data sources, improved validation, and transparent data quality reporting.
 """
 
 import pandas as pd
@@ -15,7 +15,7 @@ from src.ml_model import NYCRevenuePredictor
 class NYCPropertyInvestmentAnalyzer:
     """
     Complete property investment analysis system for NYC.
-    Integrates real data collection pipeline with ML revenue prediction.
+    Enhanced with comprehensive validation and transparent data quality reporting.
     """
 
     def __init__(self, google_api_key: str):
@@ -60,21 +60,50 @@ class NYCPropertyInvestmentAnalyzer:
         
         return any(indicator in address_lower for indicator in nyc_indicators)
 
+    def analyze_property(self, address: str, use_validation: bool = True) -> Dict:
+        """
+        Enhanced property analysis with automatic validation and transparent error handling.
+        
+        This method now uses comprehensive validation by default and provides detailed
+        data quality information to help users understand the reliability of results.
+
+        Args:
+            address: Property address to analyze
+            use_validation: Whether to use enhanced validation (default: True)
+
+        Returns:
+            Complete investment analysis dictionary with validation and data quality info
+        """
+        
+        if use_validation:
+            # Use enhanced validation by default
+            return self.analyze_property_with_validation(address)
+        else:
+            # Fallback to original method (for compatibility)
+            return self._analyze_property_original(address)
+
     def analyze_property_with_validation(self, address: str) -> Dict:
         """
-        Enhanced analyze_property with address validation
+        Enhanced analyze_property with comprehensive validation and error handling.
         
-        This method includes comprehensive validation and error handling
+        This method provides the most reliable analysis by validating each step
+        and providing transparent feedback about data quality and potential issues.
         """
         
-        self.logger.info(f"Analyzing property with validation: {address}")
+        self.logger.info(f"Analyzing property with enhanced validation: {address}")
         
         # Step 1: Validate address format
         if not self._basic_address_validation(address):
             return {
                 'error': 'Invalid address format',
                 'message': 'Please provide a complete NYC address',
-                'example': '350 Central Park West, New York, NY'
+                'example': '350 Central Park West, New York, NY',
+                'data_quality': {'overall_score': 0, 'confidence_level': 'none'},
+                'suggestions': [
+                    'Include street number and name',
+                    'Specify NYC borough or "New York, NY"',
+                    'Check address spelling and format'
+                ]
             }
         
         # Step 2: Geocode and validate coordinates
@@ -83,7 +112,13 @@ class NYCPropertyInvestmentAnalyzer:
             return {
                 'error': 'Address not found',
                 'message': 'Could not locate this address',
-                'suggestion': 'Please check the address spelling and format'
+                'suggestion': 'Please check the address spelling and format',
+                'data_quality': {'overall_score': 0, 'confidence_level': 'none'},
+                'troubleshooting': [
+                    'Verify the address exists in NYC',
+                    'Try different address format (e.g., include apartment number)',
+                    'Check for typos in street name or number'
+                ]
             }
         
         # Step 3: Validate coordinates match address
@@ -91,27 +126,54 @@ class NYCPropertyInvestmentAnalyzer:
             address, coordinates['lat'], coordinates['lng']
         )
         
-        if not validation['is_valid']:
+        if not validation['is_valid'] and validation['confidence'] < 0.6:
             return {
                 'error': 'Address validation failed',
                 'message': 'The geocoded location does not match the input address',
                 'issues': validation['issues'],
-                'suggestion': 'Please verify the address is correct and in NYC'
+                'confidence': validation['confidence'],
+                'reverse_address': validation.get('reverse_address'),
+                'suggestion': 'Please verify the address is correct and in NYC',
+                'data_quality': {'overall_score': 20, 'confidence_level': 'very_low'},
+                'troubleshooting': [
+                    'Check if the address format is standard',
+                    'Verify the building number and street name',
+                    'Consider using the suggested reverse-geocoded address'
+                ]
             }
         
-        # Step 4: Proceed with normal analysis
+        # Step 4: Proceed with normal analysis (with warnings for validation issues)
         try:
-            analysis = self.analyze_property(address)
+            analysis = self._analyze_property_original(address)
             
             # Add validation info to result
             analysis['address_validation'] = validation
             
-            # Enhance data quality assessment
-            if analysis['data_quality']['overall_score'] < 60:
-                analysis['warnings'] = [
-                    "Low data quality - results may be unreliable",
-                    "Consider verifying property details manually"
-                ]
+            # Enhance data quality assessment with validation results
+            data_quality = analysis.get('data_quality', {})
+            
+            # Adjust quality score based on validation
+            if not validation['is_valid']:
+                data_quality['overall_score'] = max(0, data_quality.get('overall_score', 0) - 15)
+                data_quality['validation_warnings'] = validation['issues']
+            
+            # Add warnings for low data quality
+            warnings = []
+            if data_quality.get('overall_score', 0) < 60:
+                warnings.append("Low data quality - results may be unreliable")
+                warnings.append("Consider verifying property details manually")
+            
+            if not validation['is_valid']:
+                warnings.append("Address validation failed - coordinate accuracy questionable")
+            
+            if validation['confidence'] < 0.8:
+                warnings.append(f"Geocoding confidence low ({validation['confidence']:.2f}) - verify address")
+            
+            if warnings:
+                analysis['warnings'] = warnings
+            
+            # Add data source transparency
+            analysis['data_sources'] = self._get_data_source_summary(analysis)
             
             return analysis
             
@@ -120,26 +182,19 @@ class NYCPropertyInvestmentAnalyzer:
             return {
                 'error': 'Analysis failed',
                 'message': str(e),
-                'address_validation': validation
+                'address_validation': validation,
+                'data_quality': {'overall_score': 0, 'confidence_level': 'none'},
+                'troubleshooting': [
+                    'Check internet connection',
+                    'Verify API keys are configured correctly',
+                    'Try again in a few minutes (rate limiting)',
+                    'Run diagnostic script: python scripts/diagnose_data_issues.py'
+                ]
             }
 
-    def analyze_property(self, address: str) -> Dict:
+    def _analyze_property_original(self, address: str) -> Dict:
         """
-        Complete analysis workflow for a single property using real data sources.
-
-        Steps:
-        1. Geocode address to get coordinates
-        2. Collect real property data from NYC records
-        3. Gather real location features (crime, transit, amenities)
-        4. Find real rental comparables
-        5. Predict revenue using ML model
-        6. Generate comprehensive investment analysis
-
-        Args:
-            address: Property address to analyze
-
-        Returns:
-            Complete investment analysis dictionary with data quality scores
+        Original property analysis method (for compatibility and fallback)
         """
         self.logger.info(f"Analyzing property with real data: {address}")
 
@@ -192,6 +247,58 @@ class NYCPropertyInvestmentAnalyzer:
             self.logger.error(f"Error analyzing property {address}: {e}")
             # Fallback to basic analysis
             return self._analyze_with_fallback_data(address)
+
+    def _get_data_source_summary(self, analysis: Dict) -> Dict:
+        """Generate transparent data source summary"""
+        
+        sources = {
+            'property_data': 'Unknown',
+            'crime_data': 'Unknown',
+            'transit_data': 'Unknown',
+            'amenity_data': 'Unknown',
+            'rental_data': 'Unknown'
+        }
+        
+        # Property data source
+        prop_source = analysis['property_details'].get('source', 'estimated')
+        if 'NYC' in prop_source:
+            sources['property_data'] = 'NYC Department of Finance (Real)'
+        elif 'Location-based' in prop_source:
+            sources['property_data'] = 'Location-based Estimation'
+        else:
+            sources['property_data'] = 'Simulated Data'
+        
+        # Crime data source
+        crime_score = analysis['location_analysis'].get('crime_score', 0)
+        if crime_score > 0:
+            sources['crime_data'] = 'NYC Open Data - NYPD Records (Real)'
+        else:
+            sources['crime_data'] = 'Location-based Estimation'
+        
+        # Transit data source
+        distance_to_subway = analysis['location_analysis'].get('distance_to_subway', 999)
+        if distance_to_subway < 99:  # Reasonable distance suggests real data
+            sources['transit_data'] = 'MTA Subway Station Data (Real)'
+        else:
+            sources['transit_data'] = 'Distance-based Estimation'
+        
+        # Amenity data source
+        total_amenities = analysis['location_analysis'].get('total_amenities', 0)
+        if total_amenities > 0 and self.google_api_key != 'demo-api-key':
+            sources['amenity_data'] = 'Google Places API (Real)'
+        else:
+            sources['amenity_data'] = 'Simulated based on location'
+        
+        # Rental data source
+        rental_comps = analysis.get('rental_comparables', [])
+        real_sources = [comp for comp in rental_comps 
+                       if comp.get('listing_source', 'unknown') not in ['Estimated', 'Market Estimate']]
+        if len(real_sources) >= 2:
+            sources['rental_data'] = f'Market-based ({len(real_sources)} real comparables)'
+        else:
+            sources['rental_data'] = 'Neighborhood-based Estimation'
+        
+        return sources
 
     def _collect_real_property_data(self, address: str, coordinates: Dict) -> Dict:
         """
@@ -428,15 +535,22 @@ class NYCPropertyInvestmentAnalyzer:
             property_data, location_features, rental_comps, revenue_prediction
         )
 
-        # Mark as simulated data
+        # Mark as simulated data with warnings
         investment_analysis['data_quality'] = {
-            'overall_score': 50,
+            'overall_score': 30,
             'data_source': 'simulated',
             'geocoding_quality': 'low',
             'property_data_quality': 'simulated',
             'location_data_quality': 'simulated',
-            'rental_data_quality': 'simulated'
+            'rental_data_quality': 'simulated',
+            'confidence_level': 'low'
         }
+        
+        investment_analysis['warnings'] = [
+            "Analysis based on simulated data - accuracy limited",
+            "Real data sources unavailable for this address",
+            "Results should be verified with additional research"
+        ]
 
         return investment_analysis
 
@@ -485,23 +599,27 @@ class NYCPropertyInvestmentAnalyzer:
     def _assess_data_quality(self, property_data: Dict, location_features: Dict,
                            rental_comps: List[Dict], coordinates: Dict) -> Dict:
         """
-        Enhanced data quality assessment with more detailed scoring
+        Enhanced data quality assessment with more detailed scoring and transparency
         """
         quality_score = 0
         quality_issues = []
+        data_sources_used = []
 
         # Geocoding quality (25 points)
         geocoding_quality = coordinates.get('data_quality', 'low')
         if geocoding_quality == 'high':
             quality_score += 25
             geo_score = 'high'
+            data_sources_used.append('Google Geocoding API')
         elif geocoding_quality == 'medium':
             quality_score += 18
             geo_score = 'medium'
+            data_sources_used.append('Google Geocoding API (limited validation)')
         else:
             quality_score += 10
             geo_score = 'low'
             quality_issues.append("Geocoding quality is low")
+            data_sources_used.append('Fallback coordinates')
 
         # Check for validation issues
         if coordinates.get('validation_issues'):
@@ -513,23 +631,32 @@ class NYCPropertyInvestmentAnalyzer:
         if 'NYC' in prop_source:
             quality_score += 35
             prop_quality = 'high'
+            data_sources_used.append('NYC Department of Finance')
         elif 'estimated' in prop_source or 'Location-based' in prop_source:
             quality_score += 25
             prop_quality = 'medium'
             quality_issues.append("Property data estimated from location")
+            data_sources_used.append('Location-based estimation')
         else:
             quality_score += 15
             prop_quality = 'low'
             quality_issues.append("Limited property data available")
+            data_sources_used.append('Simulated property data')
 
         # Location data quality (25 points)
         location_data_points = 0
         if location_features.get('crime_score', 0) > 0:
             location_data_points += 8
+            data_sources_used.append('NYC Open Data (Crime)')
         if location_features.get('total_amenities', 0) > 5:
             location_data_points += 8
+            if self.google_api_key != 'demo-api-key':
+                data_sources_used.append('Google Places API')
+            else:
+                data_sources_used.append('Simulated amenities')
         if location_features.get('distance_to_subway', 999) < 2:
             location_data_points += 5
+            data_sources_used.append('MTA Subway Data')
         if location_features.get('transit_score', 0) > 0:
             location_data_points += 4
 
@@ -549,13 +676,16 @@ class NYCPropertyInvestmentAnalyzer:
         if len(real_sources) >= 3:
             quality_score += 15
             rental_quality = 'high'
+            data_sources_used.append(f'Real rental listings ({len(real_sources)} sources)')
         elif len(real_sources) >= 1:
             quality_score += 10
             rental_quality = 'medium'
+            data_sources_used.append(f'Mixed rental data ({len(real_sources)} real)')
         else:
             quality_score += 5
             rental_quality = 'low'
             quality_issues.append("Rental comparables are estimated")
+            data_sources_used.append('Market-based rental estimates')
 
         return {
             'overall_score': min(100, quality_score),
@@ -567,12 +697,14 @@ class NYCPropertyInvestmentAnalyzer:
             'real_data_sources': len(real_sources),
             'total_comparables': len(rental_comps),
             'quality_issues': quality_issues,
-            'confidence_level': 'high' if quality_score >= 80 else 'medium' if quality_score >= 60 else 'low'
+            'confidence_level': 'high' if quality_score >= 80 else 'medium' if quality_score >= 60 else 'low',
+            'data_sources_used': list(set(data_sources_used)),  # Remove duplicates
+            'transparency_note': f"Analysis uses {len(set(data_sources_used))} data sources with {quality_score}/100 quality score"
         }
 
     def _generate_investment_analysis(self, property_data: Dict, location_features: Dict,
                                     rental_comps: List[Dict], revenue_prediction: Dict) -> Dict:
-        """Generate comprehensive investment analysis"""
+        """Generate comprehensive investment analysis with enhanced metrics"""
 
         monthly_rent = revenue_prediction['predicted_monthly_rent']
         annual_revenue = revenue_prediction['annual_revenue']
@@ -714,7 +846,7 @@ class NYCPropertyInvestmentAnalyzer:
         }
 
     def generate_detailed_report(self, analysis: Dict) -> str:
-        """Generate a detailed investment report with data quality information"""
+        """Generate a detailed investment report with enhanced data quality information"""
 
         prop = analysis['property_details']
         loc = analysis['location_analysis']
@@ -723,6 +855,10 @@ class NYCPropertyInvestmentAnalyzer:
         risk = analysis['risk_assessment']
         rec = analysis['investment_recommendation']
         quality = analysis.get('data_quality', {})
+
+        # Enhanced data sources section
+        data_sources = analysis.get('data_sources', {})
+        warnings = analysis.get('warnings', [])
 
         report = f"""
 ═══════════════════════════════════════════════════════════════════
@@ -778,16 +914,23 @@ Risk Factors:             {', '.join(risk['risk_factors']) if risk['risk_factors
 Recommendation:           {rec['recommendation']} {'🚀' if 'BUY' in rec['recommendation'] else '⏸️' if 'HOLD' in rec['recommendation'] else '❌'}
 Confidence Level:         {rec['confidence']}
 
-📈 DATA QUALITY ASSESSMENT
+📈 DATA QUALITY & TRANSPARENCY
 ──────────────────────────────────────────────────────────────────
 Overall Data Quality:     {quality.get('overall_score', 0)}/100 {'🟢' if quality.get('overall_score', 0) >= 80 else '🟡' if quality.get('overall_score', 0) >= 60 else '🔴'}
-Confidence Level:         {quality.get('confidence_level', 'unknown').title()}
-Property Data Source:     {quality.get('property_data_quality', 'unknown').title()}
-Location Data Quality:    {quality.get('location_data_quality', 'unknown').title()}
-Rental Data Quality:      {quality.get('rental_data_quality', 'unknown').title()}
-Real Data Sources:        {quality.get('real_data_sources', 0)} of {quality.get('total_comparables', 0)} comparables
+Analysis Confidence:      {quality.get('confidence_level', 'unknown').title()}
+Data Sources Used:        {len(quality.get('data_sources_used', []))} sources
 
-{"📋 DATA QUALITY ISSUES:" if quality.get('quality_issues') else ""}
+📋 DATA SOURCE BREAKDOWN:
+Property Data:            {data_sources.get('property_data', 'Unknown')}
+Crime Data:               {data_sources.get('crime_data', 'Unknown')}
+Transit Data:             {data_sources.get('transit_data', 'Unknown')}
+Amenity Data:             {data_sources.get('amenity_data', 'Unknown')}
+Rental Data:              {data_sources.get('rental_data', 'Unknown')}
+
+{f"⚠️  IMPORTANT WARNINGS:" if warnings else ""}
+{chr(10).join([f"• {warning}" for warning in warnings]) if warnings else ""}
+
+{f"📋 DATA QUALITY ISSUES:" if quality.get('quality_issues') else ""}
 {chr(10).join([f"• {issue}" for issue in quality.get('quality_issues', [])]) if quality.get('quality_issues') else ""}
 
 💡 KEY INSIGHTS
@@ -796,7 +939,7 @@ Real Data Sources:        {quality.get('real_data_sources', 0)} of {quality.get(
 • {'Excellent location scores support premium rents and tenant demand' if (loc['crime_score'] + loc['transit_score']) / 2 >= 80 else 'Good location fundamentals with room for improvement' if (loc['crime_score'] + loc['transit_score']) / 2 >= 65 else 'Location challenges may limit rental growth potential'}
 • {'Modern property supports lower maintenance costs and higher rents' if prop['year_built'] >= 1990 else 'Mature property may require renovation budget but offers character' if prop['year_built'] >= 1970 else 'Older property requires significant maintenance consideration'}
 • {f"Positive cash flow of ${fin['monthly_cash_flow']:,.0f}/month" if fin['monthly_cash_flow'] > 0 else f"Negative cash flow of ${abs(fin['monthly_cash_flow']):,.0f}/month requires additional capital"}
-• {f"{quality.get('confidence_level', 'medium').title()} confidence analysis based on {quality.get('data_source', 'mixed')} data"}
+• Analysis confidence: {quality.get('transparency_note', 'Data quality information unavailable')}
 
 🔍 MODEL PERFORMANCE
 ──────────────────────────────────────────────────────────────────
@@ -805,25 +948,39 @@ Prediction RMSE:          ${rev['model_rmse']:,.0f}
 
 ═══════════════════════════════════════════════════════════════════
 DISCLAIMER: This analysis is based on algorithmic predictions and
-available market data. Data quality: {quality.get('overall_score', 0)}/100. Consult with real estate
-professionals and conduct thorough due diligence before making
-investment decisions.
+available market data. Data quality score: {quality.get('overall_score', 0)}/100. 
+{f"Analysis uses {len(quality.get('data_sources_used', []))} data sources. " if quality.get('data_sources_used') else ""}
+Always consult with real estate professionals and conduct thorough 
+due diligence before making investment decisions.
 ═══════════════════════════════════════════════════════════════════
         """
 
         return report
 
-    def batch_analyze_properties(self, addresses: List[str]) -> pd.DataFrame:
-        """Analyze multiple properties and return comparison DataFrame"""
-        self.logger.info(f"Batch analyzing {len(addresses)} properties with real data...")
+    def batch_analyze_properties(self, addresses: List[str], use_validation: bool = True) -> pd.DataFrame:
+        """
+        Analyze multiple properties with enhanced validation and data quality reporting
+        """
+        self.logger.info(f"Batch analyzing {len(addresses)} properties with enhanced validation...")
 
         results = []
+        errors = []
 
         for i, address in enumerate(addresses, 1):
             self.logger.info(f"Processing {i}/{len(addresses)}: {address}")
 
             try:
-                analysis = self.analyze_property(address)
+                analysis = self.analyze_property(address, use_validation=use_validation)
+                
+                # Check for errors in analysis
+                if 'error' in analysis:
+                    errors.append({
+                        'address': address,
+                        'error': analysis['error'],
+                        'message': analysis.get('message', ''),
+                        'data_quality': analysis.get('data_quality', {}).get('overall_score', 0)
+                    })
+                    continue
 
                 # Extract key metrics for comparison
                 prop = analysis['property_details']
@@ -850,11 +1007,19 @@ investment decisions.
                     'data_quality_score': quality.get('overall_score', 0),
                     'confidence_level': quality.get('confidence_level', 'medium'),
                     'total_amenities': loc.get('total_amenities', 0),
-                    'distance_to_subway': loc['distance_to_subway']
+                    'distance_to_subway': loc['distance_to_subway'],
+                    'warnings': len(analysis.get('warnings', [])),
+                    'data_sources_count': len(quality.get('data_sources_used', []))
                 })
 
             except Exception as e:
                 self.logger.error(f"Error analyzing {address}: {e}")
+                errors.append({
+                    'address': address,
+                    'error': 'Exception',
+                    'message': str(e),
+                    'data_quality': 0
+                })
                 continue
 
         df = pd.DataFrame(results)
@@ -867,10 +1032,16 @@ investment decisions.
         else:
             self.logger.warning("No properties analyzed successfully")
 
+        # Log errors summary
+        if errors:
+            self.logger.warning(f"Failed to analyze {len(errors)} properties:")
+            for error in errors[:5]:  # Show first 5 errors
+                self.logger.warning(f"  {error['address']}: {error['error']}")
+
         return df
 
     def rank_investment_opportunities(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Rank properties by investment attractiveness with data quality weighting"""
+        """Rank properties by investment attractiveness with enhanced data quality weighting"""
 
         if df.empty:
             return df
@@ -888,21 +1059,24 @@ investment decisions.
             np.maximum((df['monthly_cash_flow'] / 2000) * 50 + 50, 0)
         )
 
-        # Data quality bonus
-        df['quality_bonus'] = df['data_quality_score'] / 100 * 10  # Up to 10 point bonus
+        # Enhanced data quality bonus
+        df['quality_bonus'] = df['data_quality_score'] / 100 * 15  # Up to 15 point bonus for high quality
 
         # Calculate composite score with weights
         df['investment_score'] = (
             df['yield_score'] * 0.3 +           # 30% weight on yield
             df['rent_score'] * 0.25 +          # 25% on rent potential
-            df['location_score_norm'] * 0.25 + # 25% on location
+            df['location_score_norm'] * 0.2 +  # 20% on location
             df['cash_flow_score'] * 0.15 +     # 15% on cash flow
-            df['quality_bonus'] * 0.05         # 5% on data quality
+            df['quality_bonus'] * 0.1          # 10% on data quality
         )
 
         # Adjust for risk
         risk_adjustment = {'Low': 1.0, 'Medium': 0.9, 'High': 0.75}
         df['investment_score'] *= df['overall_risk'].map(risk_adjustment)
+
+        # Penalty for properties with warnings
+        df['investment_score'] -= df['warnings'] * 2  # 2 point penalty per warning
 
         # Rank properties
         df['rank'] = df['investment_score'].rank(ascending=False, method='dense').astype(int)
@@ -928,5 +1102,5 @@ investment decisions.
             'model_type': type(self.revenue_predictor.model).__name__ if self.revenue_predictor.model else 'Not trained',
             'model_metrics': self.revenue_predictor.model_metrics,
             'feature_importance': self.revenue_predictor.get_feature_importance(),
-            'data_pipeline_version': 'enhanced_with_validation_v3.0'
+            'data_pipeline_version': 'enhanced_with_comprehensive_validation_v4.0'
         }
