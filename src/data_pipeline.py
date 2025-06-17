@@ -18,6 +18,7 @@ from bs4 import BeautifulSoup
 import os
 import re
 import urllib.parse
+from difflib import SequenceMatcher
 
 @dataclass
 class PropertyData:
@@ -121,6 +122,143 @@ class NYCPropertyDataPipeline:
         conn.close()
         self.logger.info("Database initialized successfully")
 
+    def standardize_address(self, address: str) -> str:
+        """Standardize address format for better matching"""
+        
+        # Remove apartment/unit numbers
+        address = re.sub(r'\s+(apt|apartment|unit|#)\s*[\w-]+', '', address, flags=re.IGNORECASE)
+        
+        # Remove borough names that might interfere
+        boroughs = ['manhattan', 'brooklyn', 'bronx', 'queens', 'staten island']
+        for borough in boroughs:
+            address = re.sub(rf',?\s*{borough}\s*,?', '', address, flags=re.IGNORECASE)
+        
+        # Standardize directionals
+        directionals = {
+            'north': 'n', 'south': 's', 'east': 'e', 'west': 'w',
+            'northeast': 'ne', 'northwest': 'nw', 'southeast': 'se', 'southwest': 'sw'
+        }
+        
+        for full, abbrev in directionals.items():
+            address = re.sub(rf'\b{full}\b', abbrev, address, flags=re.IGNORECASE)
+        
+        # Standardize street types
+        street_types = {
+            'street': 'st', 'avenue': 'ave', 'boulevard': 'blvd',
+            'place': 'pl', 'road': 'rd', 'drive': 'dr', 'lane': 'ln',
+            'court': 'ct', 'plaza': 'plz', 'parkway': 'pkwy'
+        }
+        
+        for full, abbrev in street_types.items():
+            address = re.sub(rf'\b{full}\b', abbrev, address, flags=re.IGNORECASE)
+        
+        # Clean up spaces and case
+        address = re.sub(r'\s+', ' ', address.strip().upper())
+        
+        return address
+
+    def calculate_address_similarity(self, addr1: str, addr2: str) -> float:
+        """Calculate similarity between two addresses"""
+        
+        std_addr1 = self.standardize_address(addr1)
+        std_addr2 = self.standardize_address(addr2)
+        
+        # Use sequence matcher for similarity
+        similarity = SequenceMatcher(None, std_addr1, std_addr2).ratio()
+        
+        # Bonus points for matching street number exactly
+        num1 = re.search(r'^\d+', std_addr1)
+        num2 = re.search(r'^\d+', std_addr2)
+        
+        if num1 and num2 and num1.group() == num2.group():
+            similarity += 0.1  # 10% bonus for matching street number
+        
+        return min(1.0, similarity)
+
+    def _is_within_nyc_bounds(self, lat: float, lng: float) -> bool:
+        """Check if coordinates are within NYC boundaries"""
+        
+        NYC_BOUNDS = {
+            'lat_min': 40.4774,
+            'lat_max': 40.9176,
+            'lng_min': -74.2591,
+            'lng_max': -73.7004
+        }
+        
+        return (NYC_BOUNDS['lat_min'] <= lat <= NYC_BOUNDS['lat_max'] and 
+                NYC_BOUNDS['lng_min'] <= lng <= NYC_BOUNDS['lng_max'])
+
+    def _reverse_geocode(self, lat: float, lng: float) -> Optional[str]:
+        """Reverse geocode coordinates to get address"""
+        
+        try:
+            self._respect_rate_limit('geocoding', 0.1)
+            
+            url = "https://maps.googleapis.com/maps/api/geocode/json"
+            params = {
+                'latlng': f"{lat},{lng}",
+                'key': self.google_api_key,
+                'result_type': 'street_address'
+            }
+            
+            response = self.session.get(url, params=params, timeout=10)
+            response.raise_for_status()
+            
+            data = response.json()
+            
+            if data['status'] == 'OK' and data['results']:
+                return data['results'][0]['formatted_address']
+            
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"Reverse geocoding failed: {e}")
+            return None
+
+    def validate_coordinates_against_address(self, address: str, lat: float, lng: float) -> Dict:
+        """Validate that geocoded coordinates match the input address"""
+        
+        validation_result = {
+            'is_valid': False,
+            'confidence': 0.0,
+            'issues': [],
+            'reverse_address': None
+        }
+        
+        try:
+            # Check if coordinates are in NYC bounds
+            if not self._is_within_nyc_bounds(lat, lng):
+                validation_result['issues'].append("Coordinates outside NYC boundaries")
+                return validation_result
+            
+            # Reverse geocode coordinates
+            if self.google_api_key and self.google_api_key != "demo-api-key":
+                reverse_address = self._reverse_geocode(lat, lng)
+                if reverse_address:
+                    validation_result['reverse_address'] = reverse_address
+                    
+                    # Calculate similarity between input and reverse geocoded address
+                    similarity = self.calculate_address_similarity(address, reverse_address)
+                    validation_result['confidence'] = similarity
+                    
+                    if similarity >= 0.7:
+                        validation_result['is_valid'] = True
+                    else:
+                        validation_result['issues'].append(
+                            f"Address mismatch: input='{address}', "
+                            f"geocoded='{reverse_address}' (similarity: {similarity:.2f})"
+                        )
+            else:
+                # In demo mode, just check bounds
+                validation_result['is_valid'] = True
+                validation_result['confidence'] = 0.5
+                validation_result['issues'].append("Demo mode - limited validation")
+        
+        except Exception as e:
+            validation_result['issues'].append(f"Validation error: {str(e)}")
+        
+        return validation_result
+
     def geocode_address(self, address: str) -> Optional[Dict]:
         """
         Convert address to latitude/longitude using Google Geocoding API
@@ -156,12 +294,24 @@ class NYCPropertyDataPipeline:
                 result = data['results'][0]
                 location = result['geometry']['location']
 
-                return {
+                coordinates = {
                     'lat': location['lat'],
                     'lng': location['lng'],
                     'formatted_address': result['formatted_address'],
                     'data_quality': 'high'
                 }
+
+                # Validate coordinates against input address
+                validation = self.validate_coordinates_against_address(
+                    address, coordinates['lat'], coordinates['lng']
+                )
+                
+                if not validation['is_valid'] and validation['issues']:
+                    self.logger.warning(f"Geocoding validation issues for {address}: {validation['issues']}")
+                    coordinates['data_quality'] = 'medium'
+                    coordinates['validation_issues'] = validation['issues']
+
+                return coordinates
             else:
                 self.logger.warning(f"Geocoding failed for {address}: {data.get('status', 'Unknown error')}")
                 return None
@@ -325,43 +475,139 @@ class NYCPropertyDataPipeline:
         else:  # Far outer areas
             return np.random.uniform(60, 75)
 
+    def _parse_address_components(self, address: str) -> Dict:
+        """Parse address into components for better searching"""
+        
+        # Extract street number
+        street_number_match = re.match(r'^(\d+)', address.strip())
+        street_number = street_number_match.group(1) if street_number_match else None
+        
+        # Extract street name (everything between number and comma/end)
+        street_name_match = re.search(r'^\d+\s+(.+?)(?:,|$)', address.strip())
+        street_name = street_name_match.group(1).strip() if street_name_match else None
+        
+        return {
+            'street_number': street_number,
+            'street_name': street_name,
+            'full_address': address.strip()
+        }
+
+    def _search_property_exact(self, standardized_address: str) -> Optional[Dict]:
+        """Search for exact property match"""
+        
+        assessment_url = "https://data.cityofnewyork.us/resource/8y4t-faws.json"
+        
+        # Try exact match
+        params = {
+            "$where": f"upper(address) = '{standardized_address}'",
+            "$limit": 1
+        }
+        
+        app_token = os.getenv('NYC_OPEN_DATA_APP_TOKEN', '')
+        if app_token:
+            params["$app_token"] = app_token
+        
+        response = self.session.get(assessment_url, params=params, timeout=30)
+        response.raise_for_status()
+        
+        results = response.json()
+        if results:
+            sales_data = self._get_recent_sales_data(standardized_address)
+            return self._process_nyc_property_data(results[0], sales_data)
+        
+        return None
+
+    def _search_property_fuzzy(self, address: str) -> List[Dict]:
+        """Search for potential property matches using fuzzy logic"""
+        
+        assessment_url = "https://data.cityofnewyork.us/resource/8y4t-faws.json"
+        
+        # Extract street number and name for targeted search
+        address_parts = self._parse_address_components(address)
+        if not address_parts['street_number']:
+            return []
+        
+        # Search for properties with same street number
+        params = {
+            "$where": f"address LIKE '{address_parts['street_number']}%'",
+            "$limit": 20,  # Get more candidates for validation
+            "$order": "bldgarea DESC"
+        }
+        
+        app_token = os.getenv('NYC_OPEN_DATA_APP_TOKEN', '')
+        if app_token:
+            params["$app_token"] = app_token
+        
+        response = self.session.get(assessment_url, params=params, timeout=30)
+        response.raise_for_status()
+        
+        return response.json()
+
+    def _validate_property_matches(self, input_address: str, candidates: List[Dict]) -> Optional[Dict]:
+        """Validate property matches and return best one"""
+        
+        if not candidates:
+            return None
+        
+        best_match = None
+        best_score = 0.0
+        min_score_threshold = 0.75  # Minimum 75% similarity required
+        
+        for candidate in candidates:
+            candidate_address = candidate.get('address', '')
+            if not candidate_address:
+                continue
+            
+            # Calculate similarity score
+            similarity = self.calculate_address_similarity(input_address, candidate_address)
+            
+            self.logger.debug(f"Address similarity: {input_address} vs {candidate_address} = {similarity:.3f}")
+            
+            if similarity > best_score and similarity >= min_score_threshold:
+                best_score = similarity
+                best_match = candidate
+        
+        if best_match:
+            self.logger.info(f"Best property match: {best_match.get('address', 'N/A')} "
+                            f"(similarity: {best_score:.3f})")
+            
+            # Get sales data for the matched property
+            sales_data = self._get_recent_sales_data(best_match.get('address', ''))
+            return self._process_nyc_property_data(best_match, sales_data)
+        
+        self.logger.warning(f"No property matches above {min_score_threshold} threshold for {input_address}")
+        return None
+
     def get_real_property_data(self, address: str) -> Optional[Dict]:
         """
-        Get real property data from NYC Department of Finance records
+        Enhanced property data retrieval with better address matching
+        
+        Replaces the previous get_real_property_data() method with improved matching
         """
         try:
             # Rate limiting for NYC Open Data
             self._respect_rate_limit('nyc_property', 1.0)
-
-            # First try property assessment data
-            assessment_url = "https://data.cityofnewyork.us/resource/8y4t-faws.json"
-
-            # Clean address for search
-            search_address = address.split(',')[0].strip().upper()
-
-            params = {
-                "$where": f"upper(address) LIKE upper('%{search_address}%')",
-                "$limit": 5,
-                "$order": "bldgarea DESC"
-            }
-
-            response = self.session.get(assessment_url, params=params, timeout=30)
-            response.raise_for_status()
-
-            assessment_data = response.json()
-
-            if assessment_data:
-                # Get the best match (largest building area)
-                property_record = assessment_data[0]
-
-                # Also try to get recent sales data
-                sales_data = self._get_recent_sales_data(search_address)
-
-                return self._process_nyc_property_data(property_record, sales_data)
-            else:
-                self.logger.warning(f"No NYC property records found for {address}")
-                return None
-
+            
+            # Standardize the input address
+            standardized_address = self.standardize_address(address)
+            
+            # Try exact match first
+            exact_result = self._search_property_exact(standardized_address)
+            if exact_result:
+                self.logger.info(f"Found exact property match for {address}")
+                return exact_result
+            
+            # Try fuzzy search with validation
+            fuzzy_results = self._search_property_fuzzy(address)
+            if fuzzy_results:
+                best_match = self._validate_property_matches(address, fuzzy_results)
+                if best_match:
+                    self.logger.info(f"Found validated property match for {address}")
+                    return best_match
+            
+            self.logger.warning(f"No reliable property records found for {address}")
+            return None
+            
         except Exception as e:
             self.logger.error(f"Error getting NYC property data for {address}: {e}")
             return None
