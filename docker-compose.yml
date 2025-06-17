@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  nyc-property-ml:
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY:-demo-api-key}
+      - NYC_OPEN_DATA_APP_TOKEN=${NYC_OPEN_DATA_APP_TOKEN:-}
+      - DATABASE_PATH=/app/data/nyc_property_data.db
+      - LOG_LEVEL=INFO
+      - FLASK_ENV=production
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./models:/app/models
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
+  # Optional: Add nginx for production
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - nyc-property-ml
+    restart: unless-stopped
+    profiles:
+      - production
+
+volumes:
+  app_data:
+    driver: local
+  app_logs:
+    driver: local
+  app_models:
+    driver: local
+
+networks:
+  default:
+    name: nyc-property-ml-network
