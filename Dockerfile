@@ -1,4 +1,4 @@
-# NYC Property Investment ML - Web Application Docker Image
+# NYC Property Investment ML - Production Docker Image
 FROM python:3.9-slim
 
 # Set working directory
@@ -8,6 +8,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     build-essential \
     curl \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching
@@ -24,6 +25,9 @@ COPY src/ ./src/
 COPY scripts/ ./scripts/
 COPY web_app/ ./web_app/
 COPY .env.example .env
+
+# Copy test and setup files
+COPY test_complete_system.py complete_setup.py ./
 
 # Create necessary directories
 RUN mkdir -p data logs models/saved_models
@@ -43,7 +47,7 @@ EXPOSE 5000
 HEALTHCHECK --interval=30s --timeout=30s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:5000/health || exit 1
 
-# Change to web app directory
+# Change to web app directory for startup
 WORKDIR /app/web_app
 
 # Use gunicorn for production
