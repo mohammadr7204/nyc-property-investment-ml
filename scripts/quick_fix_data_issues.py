@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import logging
 import time
+from typing import Dict, List
 
 # Add src to path
 project_root = Path(__file__).parent.parent
