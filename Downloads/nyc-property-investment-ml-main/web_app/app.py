@@ -13,18 +13,16 @@ from datetime import datetime
 import traceback
 import json
 import numpy as np
+import pandas as pd
 
-# Add project root to Python path
-project_root = Path(__file__).parent.parent.absolute()
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
+# Add src to path for imports
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root / 'src'))
 
 try:
-    from src.analyzer import NYCPropertyInvestmentAnalyzer
+    from analyzer import NYCPropertyInvestmentAnalyzer
 except ImportError as e:
     print(f"Error importing analyzer: {e}")
-    print(f"Current sys.path: {sys.path}")
-    print(f"Project root: {project_root}")
     print("Make sure you're running from the project root directory")
     sys.exit(1)
 
@@ -62,19 +60,24 @@ def get_analyzer():
             raise
     return analyzer
 
-def convert_numpy_types(obj):
-    """Convert NumPy types to Python native types for JSON serialization."""
+def convert_to_json_serializable(obj):
+    """Convert numpy/pandas types to JSON serializable types"""
     if isinstance(obj, np.integer):
         return int(obj)
     elif isinstance(obj, np.floating):
         return float(obj)
     elif isinstance(obj, np.ndarray):
         return obj.tolist()
+    elif isinstance(obj, pd.Series):
+        return obj.tolist()
+    elif isinstance(obj, pd.DataFrame):
+        return obj.to_dict('records')
     elif isinstance(obj, dict):
-        return {key: convert_numpy_types(value) for key, value in obj.items()}
+        return {key: convert_to_json_serializable(value) for key, value in obj.items()}
     elif isinstance(obj, list):
-        return [convert_numpy_types(item) for item in obj]
-    return obj
+        return [convert_to_json_serializable(item) for item in obj]
+    else:
+        return obj
 
 # Error handlers
 @app.errorhandler(404)
@@ -121,14 +124,27 @@ def analyze_property():
         # Perform analysis
         analysis = analyzer_instance.analyze_property(address)
 
-        # Convert NumPy types to Python native types
-        response_data = convert_numpy_types(analysis)
+        # Convert numpy/pandas types to JSON serializable types
+        analysis = convert_to_json_serializable(analysis)
+
+        # Format response for frontend
+        response_data = {
+            'success': True,
+            'analysis': {
+                'address': analysis['property_details']['address'],
+                'property_details': analysis['property_details'],
+                'location_analysis': analysis['location_analysis'],
+                'revenue_prediction': analysis['revenue_prediction'],
+                'financial_metrics': analysis['financial_metrics'],
+                'risk_assessment': analysis['risk_assessment'],
+                'investment_recommendation': analysis['investment_recommendation'],
+                'data_quality': analysis.get('data_quality', {}),
+                'rental_comparables': analysis.get('rental_comparables', [])
+            }
+        }
 
         logger.info(f"Analysis completed for {address}")
-        return jsonify({
-            'success': True,
-            'analysis': response_data
-        })
+        return jsonify(response_data)
 
     except Exception as e:
         logger.error(f"Error analyzing property: {e}")
@@ -156,9 +172,16 @@ def batch_analyze():
         analyzer_instance = get_analyzer()
         results = analyzer_instance.batch_analyze_properties(addresses)
 
+        # Convert results to JSON serializable format
+        if not results.empty:
+            results_dict = results.to_dict('records')
+            results_dict = convert_to_json_serializable(results_dict)
+        else:
+            results_dict = []
+
         return jsonify({
             'success': True,
-            'results': results.to_dict('records') if not results.empty else []
+            'results': results_dict
         })
 
     except Exception as e:
@@ -243,7 +266,7 @@ if __name__ == '__main__':
     print("🏙️  NYC Property Investment ML - Web Interface")
     print("=" * 50)
     print("🚀 Starting Flask application...")
-    print("📍 Access the app at: http://localhost:8080")
+    print("📍 Access the app at: http://localhost:5001")
     print("🔧 API endpoints:")
     print("   POST /analyze - Single property analysis")
     print("   POST /batch-analyze - Multiple property analysis")
@@ -254,7 +277,7 @@ if __name__ == '__main__':
     # Run the app
     app.run(
         host='0.0.0.0',
-        port=8080,
+        port=5001,
         debug=True,
         use_reloader=True
     )
